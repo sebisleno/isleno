@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
             const { data: profile } = await supabase
               .from('profiles')
               .select('department_id')
-              .eq('invoice_approval_alias', invoice.x_studio_project_manager_1)
+              .ilike('invoice_approval_alias', invoice.x_studio_project_manager_1)
               .single();
 
             if (profile?.department_id) {

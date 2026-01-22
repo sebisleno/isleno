@@ -73,7 +73,7 @@ export function useCurrentUser(): EnhancedUser {
           language: profileData.language,
           location: profileData.location,
           monday_user_id: profileData.monday_user_id,
-          invoice_approval_alias: profileData.invoice_approval_alias
+          invoice_approval_alias: profileData.invoice_approval_alias?.toLowerCase() ?? ""
         } : null
 
         // Process role data - use the highest priority role if multiple exist

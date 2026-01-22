@@ -31,7 +31,8 @@ export async function getInvoice(invoiceId: number): Promise<OdooInvoice | null>
         "x_studio_project_manager_review_status",
         "x_studio_project_manager_1",
         "state",
-        "name"
+        "name",
+        "message_main_attachment_id"
     ];
 
     const invoices = await odooApi.searchRead(INVOICE_MODEL, domain, { fields });
@@ -51,6 +52,55 @@ export async function getInvoice(invoiceId: number): Promise<OdooInvoice | null>
     const attachments = await odooApi.searchRead(ATTACHMENT_MODEL, attachmentDomain, { fields: attachmentFields });
     invoice.attachments = attachments;
 
+    // Auto-fix: Check if invoice needs OCR processing
+    const hasZeroValue = !invoice.amount_untaxed || invoice.amount_untaxed === 0;
+    const hasAttachments = attachments.length > 0;
+    
+    if (hasZeroValue && hasAttachments) {
+        console.log(`Invoice ${invoiceId} has zero value with attachments - checking for auto-fix...`);
+        
+        // Check if message_main_attachment_id is set
+        const hasMainAttachmentId = invoice.message_main_attachment_id && 
+                                    (Array.isArray(invoice.message_main_attachment_id) ? 
+                                     invoice.message_main_attachment_id[0] : 
+                                     invoice.message_main_attachment_id);
+
+        try {
+            let attachmentId = hasMainAttachmentId;
+            
+            // If attachment not linked, link it first
+            if (!hasMainAttachmentId) {
+                console.log(`Linking attachment to invoice ${invoiceId}...`);
+                attachmentId = attachments[0].id;
+                await odooApi.write(INVOICE_MODEL, [invoiceId], {
+                    message_main_attachment_id: attachmentId
+                });
+            }
+
+            // CRITICAL: Reset Extract error state (this is what the "Retry" button does!)
+            await resetExtractErrorState(invoiceId);
+
+            // Trigger OCR processing
+            console.log(`Triggering OCR for invoice ${invoiceId}...`);
+            try {
+                const ocrResult = await odooApi.executeKw(
+                    'account.move',
+                    'action_reload_ai_data',
+                    [[invoiceId]]
+                );
+                console.log(`OCR triggered successfully for invoice ${invoiceId}, result:`, ocrResult);
+            } catch (ocrError: any) {
+                console.error(`OCR trigger failed for invoice ${invoiceId}:`, ocrError.message);
+                // Error will be handled by outer catch to allow invoice viewing even on failure
+            }
+            
+            console.log(`Auto-fix completed for invoice ${invoiceId} - extract state reset and OCR triggered`);
+        } catch (error) {
+            console.error(`Auto-fix failed for invoice ${invoiceId}:`, error);
+            // Don't throw - return invoice as-is so user can still view it
+        }
+    }
+
     return invoice;
 }
 
@@ -64,7 +114,7 @@ export async function getPendingInvoices(invoiceApprovalAlias?: string): Promise
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -102,7 +152,7 @@ export async function getInvoiceCount(invoiceApprovalAlias?: string): Promise<nu
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const result = await odooApi.executeKw(INVOICE_MODEL, 'search_count', [domain]);
@@ -129,7 +179,7 @@ export async function getAllInvoices(
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -243,8 +293,22 @@ export async function getAllInvoices(
 }
 
 /**
+ * Reset the extract error state for an invoice
+ * This is what the "Retry" button does to clear previous OCR errors
+ */
+async function resetExtractErrorState(invoiceId: number): Promise<void> {
+    console.log(`Resetting extract error state for invoice ${invoiceId}...`);
+    await odooApi.write(INVOICE_MODEL, [invoiceId], {
+        extract_state: 'no_extract_requested',
+        extract_status: false,
+        extract_error_message: false
+    });
+    console.log(`Extract error state cleared for invoice ${invoiceId}`);
+}
+
+/**
  * Ensure invoice has proper attachment linkage for OCR processing
- * This fixes the "document not found" issue by linking attachments to message_main_attachment_id
+ * This fixes the "document not found" issue by linking attachments and regenerating access tokens
  */
 async function ensureInvoiceAttachmentLinkage(invoiceId: number): Promise<boolean> {
     try {
@@ -261,40 +325,41 @@ async function ensureInvoiceAttachmentLinkage(invoiceId: number): Promise<boolea
         }
 
         const invoice = invoiceData[0];
-        const hasMainAttachment = invoice.message_main_attachment_id && 
-                                  (Array.isArray(invoice.message_main_attachment_id) ? 
-                                   invoice.message_main_attachment_id[0] : 
-                                   invoice.message_main_attachment_id);
+        let attachmentId = invoice.message_main_attachment_id && 
+                          (Array.isArray(invoice.message_main_attachment_id) ? 
+                           invoice.message_main_attachment_id[0] : 
+                           invoice.message_main_attachment_id);
 
-        // If message_main_attachment_id is already set, no action needed
-        if (hasMainAttachment) {
-            console.log(`Invoice ${invoiceId} already has main attachment linked`);
-            return true;
+        // If message_main_attachment_id is not set, link an attachment
+        if (!attachmentId) {
+            // Check if there are any attachments for this invoice
+            const attachments = await odooApi.searchRead(ATTACHMENT_MODEL, [
+                ["res_model", "=", INVOICE_MODEL],
+                ["res_id", "=", invoiceId]
+            ], {
+                fields: ["id", "name", "mimetype"],
+                limit: 1
+            });
+
+            if (attachments.length === 0) {
+                console.log(`Invoice ${invoiceId} has no attachments to link`);
+                return false;
+            }
+
+            // Link the first attachment as the main attachment
+            attachmentId = attachments[0].id;
+            console.log(`Linking attachment ${attachmentId} to invoice ${invoiceId} as message_main_attachment_id`);
+            
+            await odooApi.write(INVOICE_MODEL, [invoiceId], {
+                message_main_attachment_id: attachmentId
+            });
+
+            console.log(`Successfully linked attachment ${attachmentId} to invoice ${invoiceId}`);
         }
 
-        // Check if there are any attachments for this invoice
-        const attachments = await odooApi.searchRead(ATTACHMENT_MODEL, [
-            ["res_model", "=", INVOICE_MODEL],
-            ["res_id", "=", invoiceId]
-        ], {
-            fields: ["id", "name", "mimetype"],
-            limit: 1
-        });
+        // CRITICAL: Reset Extract error state (this is what the "Retry" button does!)
+        await resetExtractErrorState(invoiceId);
 
-        if (attachments.length === 0) {
-            console.log(`Invoice ${invoiceId} has no attachments to link`);
-            return false;
-        }
-
-        // Link the first attachment as the main attachment
-        const attachmentId = attachments[0].id;
-        console.log(`Linking attachment ${attachmentId} to invoice ${invoiceId} as message_main_attachment_id`);
-        
-        await odooApi.write(INVOICE_MODEL, [invoiceId], {
-            message_main_attachment_id: attachmentId
-        });
-
-        console.log(`Successfully linked attachment ${attachmentId} to invoice ${invoiceId}`);
         return true;
     } catch (error) {
         console.error(`Failed to ensure attachment linkage for invoice ${invoiceId}:`, error);
@@ -402,7 +467,7 @@ export async function getAwaitingApprovalInvoices(invoiceApprovalAlias?: string)
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -446,7 +511,7 @@ export async function getSentForPaymentInvoices(invoiceApprovalAlias?: string): 
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -486,7 +551,7 @@ export async function getPaidInvoices(invoiceApprovalAlias?: string): Promise<Od
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -533,7 +598,7 @@ export async function getOtherInvoices(invoiceApprovalAlias?: string): Promise<O
 
     // Add user-specific filtering if invoice_approval_alias is provided
     if (invoiceApprovalAlias) {
-        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias]);
+        domain.push(["x_studio_project_manager_1", "=", invoiceApprovalAlias.toLowerCase()]);
     }
 
     const fields = [
@@ -574,16 +639,6 @@ export async function getSuppliers(): Promise<OdooSupplier[]> {
 
 export async function getProjects(): Promise<OdooProject[]> {
     try {
-        console.log("🔍 Odoo getProjects called with:", {
-            domain: [
-                ["active", "=", true],
-                ["name", "!=", false],
-                ["name", "!=", ""],
-                ["company_id", "=", ODOO_MAIN_COMPANY_ID],
-            ],
-            fields: ["id", "name", "code", "plan_id"],
-            companyId: ODOO_MAIN_COMPANY_ID
-        });
         
         const domain = [
             ["active", "=", true],
@@ -598,12 +653,6 @@ export async function getProjects(): Promise<OdooProject[]> {
         };
         
         const projects = await odooApi.searchRead(PROJECT_MODEL, domain, { fields, ...kwargs });
-        
-        console.log("✅ Odoo getProjects result:", {
-            count: projects.length,
-            sample: projects.length > 0 ? projects[0] : 'no data',
-            departments: projects.filter(p => p.plan_id && ["Department", "Departmento"].includes(p.plan_id[1])).length
-        });
         
         return projects;
     } catch (error) {

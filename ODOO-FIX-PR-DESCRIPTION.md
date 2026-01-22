@@ -36,6 +36,13 @@ Implemented automatic attachment linking that programmatically sets `message_mai
   - Provide detailed logging and error tracking
   - Report attachment linkage status in results
 
+- Enhanced **`getInvoice()`** with automatic OCR triggering:
+  - Detects invoices with zero values + attachments when loaded
+  - Automatically links attachments if `message_main_attachment_id` is missing
+  - Triggers OCR processing immediately
+  - **Works for single invoice detail views** - fixes issues when opening individual invoices
+  - Non-blocking: triggers OCR but doesn't wait (OCR takes 5-30 seconds)
+
 - Added **pre-filtering logic** to prevent repeated processing:
   - Only invoices with attachments are sent for OCR processing
   - Invoices legitimately created without attachments are excluded
@@ -44,7 +51,7 @@ Implemented automatic attachment linking that programmatically sets `message_mai
 
 - Added **cancelled invoice filtering** across all invoice fetch functions:
   - `getAllInvoices()`, `getInvoice()`, `getPendingInvoices()`, `getInvoiceCount()`, `getOtherInvoices()`
-  - Filters applied at the Odoo API level using `["state", "!=", "cancelled"]`
+  - Filters applied at the Odoo API level using `["state", "!=", "cancel"]`
   - Reduces data transfer and processing overhead
   - Note: `getSentForPaymentInvoices()` and `getPaidInvoices()` inherently exclude cancelled by their state filters
 
@@ -71,7 +78,18 @@ Response includes:
 - Detailed results for each invoice
 - Clear action indicators (linked, already_linked, no_attachment, error)
 
-### 4. Comprehensive Documentation (`apps/kpis/README-ODOO-DOCUMENT-NOT-FOUND-FIX.md`)
+### 4. Diagnostic Endpoint (`apps/kpis/src/app/api/invoices/[id]/diagnose/route.ts`)
+
+Created a diagnostic endpoint to help troubleshoot invoice issues:
+
+**GET** `/api/invoices/{id}/diagnose`
+- Returns detailed invoice status
+- Shows attachment information
+- Identifies specific issues (no attachment, not linked, OCR not run, etc.)
+- Provides actionable recommendations
+- Useful for debugging and support
+
+### 5. Comprehensive Documentation (`apps/kpis/README-ODOO-DOCUMENT-NOT-FOUND-FIX.md`)
 
 Created detailed documentation covering:
 - Problem description and root cause
@@ -168,7 +186,9 @@ Modified:
 
 Created:
   apps/kpis/src/app/api/invoices/fix-attachments/route.ts
+  apps/kpis/src/app/api/invoices/[id]/diagnose/route.ts
   apps/kpis/README-ODOO-DOCUMENT-NOT-FOUND-FIX.md
+  ODOO-FIX-PR-DESCRIPTION.md
 ```
 
 ## Deployment Notes

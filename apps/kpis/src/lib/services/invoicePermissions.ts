@@ -77,7 +77,7 @@ export class InvoicePermissionService {
         .eq('id', userId)
         .single()
 
-      return profile?.invoice_approval_alias || null
+      return profile?.invoice_approval_alias?.toLowerCase() || null
     } catch (error) {
       console.error('Error getting user invoice alias:', error)
       return null
@@ -155,7 +155,7 @@ export class InvoicePermissionService {
         .eq('department_id', departmentId)
         .not('invoice_approval_alias', 'is', null)
 
-      return profiles?.map(p => p.invoice_approval_alias).filter((alias): alias is string => Boolean(alias)) || []
+      return profiles?.map(p => p.invoice_approval_alias?.toLowerCase()).filter((alias): alias is string => Boolean(alias)) || []
     } catch (error) {
       console.error('Error getting department invoice aliases:', error)
       return []
@@ -173,7 +173,7 @@ export class InvoicePermissionService {
         .select('invoice_approval_alias')
         .not('invoice_approval_alias', 'is', null)
 
-      return profiles?.map(p => p.invoice_approval_alias).filter((alias): alias is string => Boolean(alias)) || []
+      return profiles?.map(p => p.invoice_approval_alias?.toLowerCase()).filter((alias): alias is string => Boolean(alias)) || []
     } catch (error) {
       console.error('Error getting all invoice aliases:', error)
       return []

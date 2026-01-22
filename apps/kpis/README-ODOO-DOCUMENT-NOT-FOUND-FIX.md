@@ -112,12 +112,27 @@ A new API endpoint allows for retroactive fixing of existing invoices:
 
 ### Automatic Fix (Existing Behavior)
 
-The fix is automatically applied when:
-1. The system detects zero-value invoices during normal invoice fetching
-2. Background OCR refresh is triggered
-3. Each invoice's attachments are checked and linked before OCR processing
+The fix is automatically applied in multiple scenarios:
 
-No code changes needed for this - it happens automatically.
+#### 1. Single Invoice Detail View (`getInvoice()`)
+When you open any invoice detail page:
+- System checks if invoice has zero value + attachments
+- If attachment exists but not linked → links it automatically
+- Triggers OCR processing immediately
+- **Note:** OCR processing takes 5-30 seconds, you may need to refresh the page to see updated values
+
+#### 2. Invoice List Views (`getAllInvoices()`)
+When invoice lists are loaded:
+- System detects zero-value invoices during normal fetching
+- Filters to only those with attachments
+- Background OCR refresh is triggered for batch processing
+- Progress is tracked and reported
+
+#### 3. Manual Trigger
+- User can explicitly call the refresh-ocr endpoint
+- Useful for retry or force-refresh scenarios
+
+No code changes needed for automatic fixes - they happen transparently!
 
 ### Manual Fix for Existing Invoices
 

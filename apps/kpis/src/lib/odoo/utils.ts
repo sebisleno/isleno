@@ -16,7 +16,7 @@ export async function validateInvoiceAccess(invoiceId: number, userAlias: string
       fields: ['x_studio_project_manager_1']
     });
     
-    return invoices.length > 0 && invoices[0].x_studio_project_manager_1 === userAlias;
+    return invoices.length > 0 && invoices[0].x_studio_project_manager_1?.toLowerCase() === userAlias.toLowerCase();
   } catch (error) {
     console.error('Failed to validate invoice access:', error);
     return false;
@@ -50,7 +50,7 @@ export async function getCurrentUserInvoiceAlias(): Promise<{
       return { user, alias: null, error: 'Failed to fetch user profile' };
     }
 
-    return { user, alias: profile?.invoice_approval_alias || null };
+    return { user, alias: profile?.invoice_approval_alias?.toLowerCase() || null };
   } catch (error) {
     console.error('Error getting user invoice alias:', error);
     return { user: null, alias: null, error: 'Internal server error' };
@@ -62,7 +62,6 @@ export async function getCurrentUserInvoiceAlias(): Promise<{
  */
 export async function hasExternalBasicPermission(): Promise<boolean> {
   try {
-    console.log("🔐 Checking external_basic permission...");
     const supabase = await supabaseServer();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -70,8 +69,6 @@ export async function hasExternalBasicPermission(): Promise<boolean> {
       console.log("❌ No authenticated user:", authError?.message);
       return false;
     }
-
-    console.log("👤 User authenticated:", { id: user.id, email: user.email });
 
     const { data: roles, error: rolesError } = await supabase
       .from('user_roles')
@@ -83,9 +80,7 @@ export async function hasExternalBasicPermission(): Promise<boolean> {
       return false;
     }
 
-    console.log("🎭 User roles:", roles);
     const hasPermission = roles.some(role => role.role === 'external_basic');
-    console.log("✅ External basic permission:", hasPermission);
     
     return hasPermission;
   } catch (error) {

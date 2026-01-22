@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
           odoo_group_id
         )
       `)
-      .eq('invoice_approval_alias', alias)
+      .ilike('invoice_approval_alias', alias)
       .single();
 
     if (error) {
