@@ -46,8 +46,10 @@ export default function InvoiceClientPage() {
     ...otherInvoices
   ];
 
-  // Use the new OCR status hook for toast notifications
-  useOcrStatus(allInvoices);
+  const shouldTrackOcrStatus = zeroValueInvoiceIds.length > 0;
+
+  // Use the new OCR status hook for toast notifications only when a refresh is in progress
+  useOcrStatus(allInvoices, { enabled: shouldTrackOcrStatus });
 
   useEffect(() => {
     fetchInvoices();
@@ -76,9 +78,13 @@ export default function InvoiceClientPage() {
           }
         }
         // Store zero-value invoice IDs for OCR refresh tracking
-        if (data.metadata.zeroValueInvoiceIds) {
+        if (Array.isArray(data.metadata.zeroValueInvoiceIds)) {
           setZeroValueInvoiceIds(data.metadata.zeroValueInvoiceIds);
+        } else {
+          setZeroValueInvoiceIds([]);
         }
+      } else {
+        setZeroValueInvoiceIds([]);
       }
       
       // Group invoices by status on the client side for now

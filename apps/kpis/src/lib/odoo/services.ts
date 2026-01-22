@@ -3,7 +3,7 @@ import { ODOO_MAIN_COMPANY_ID } from "../constants/odoo";
 import { createClient } from '@supabase/supabase-js';
 import { isZeroValueInvoice } from "../utils/invoiceUtils";
 import { ocrNotificationService } from "../services/ocrNotificationService";
-import { OdooSupplier, OdooProject, OdooSpendCategory, OdooAttachment, OdooInvoice, OdooInvoiceLineItem, OdooBudget, OdooBudgetLineItem, BudgetImpact } from '@isleno/types/odoo';
+import { OdooSupplier, OdooProject, OdooSpendCategory, OdooAttachment, OdooInvoice, OdooInvoiceAttachment, OdooInvoiceLineItem, OdooBudget, OdooBudgetLineItem, BudgetImpact } from '@isleno/types/odoo';
 
 const INVOICE_MODEL = 'account.move';
 const SUPPLIER_MODEL = 'res.partner';
@@ -159,7 +159,13 @@ export async function getInvoiceCount(invoiceApprovalAlias?: string): Promise<nu
     return result;
 }
 
-export async function getAllInvoices(invoiceApprovalAlias?: string, skipOcrRefresh: boolean = false, limit?: number, offset?: number): Promise<{
+export async function getAllInvoices(
+    invoiceApprovalAlias?: string,
+    skipOcrRefresh: boolean = false,
+    limit?: number,
+    offset?: number,
+    includeAttachmentData: boolean = false
+): Promise<{
   invoices: OdooInvoice[];
   ocrRefreshPerformed: boolean;
   zeroValueInvoicesRefreshed: number;
@@ -204,15 +210,40 @@ export async function getAllInvoices(invoiceApprovalAlias?: string, skipOcrRefre
 
     const invoices = await odooApi.searchRead(INVOICE_MODEL, domain, searchOptions);
 
-    // Fetch attachments for each invoice
-    for (const invoice of invoices) {
+    if (invoices.length > 0) {
+        const invoiceIds = invoices.map(invoice => invoice.id);
         const attachmentDomain = [
             ["res_model", "=", INVOICE_MODEL],
-            ["res_id", "=", invoice.id],
+            ["res_id", "in", invoiceIds],
         ];
-        const attachmentFields = ["id", "name", "mimetype", "datas"];
-        const attachments = await odooApi.searchRead(ATTACHMENT_MODEL, attachmentDomain, { fields: attachmentFields });
-        invoice.attachments = attachments;
+        const attachmentFields = includeAttachmentData
+            ? ["id", "name", "mimetype", "datas", "res_id"]
+            : ["id", "name", "mimetype", "res_id"];
+        const attachmentSearchOptions: any = {
+            fields: attachmentFields,
+            limit: 0
+        };
+        const allAttachments = await odooApi.searchRead(ATTACHMENT_MODEL, attachmentDomain, attachmentSearchOptions) as OdooAttachment[];
+        const attachmentsByInvoice = new Map<number, OdooInvoiceAttachment[]>();
+
+        for (const attachment of allAttachments) {
+            if (!attachment.res_id) {
+                continue;
+            }
+
+            const current = attachmentsByInvoice.get(attachment.res_id) ?? [];
+            current.push({
+                id: attachment.id,
+                name: attachment.name,
+                mimetype: attachment.mimetype,
+                datas: includeAttachmentData ? attachment.datas : undefined
+            });
+            attachmentsByInvoice.set(attachment.res_id, current);
+        }
+
+        for (const invoice of invoices) {
+            invoice.attachments = attachmentsByInvoice.get(invoice.id) ?? [];
+        }
     }
 
     // Identify zero-value invoices

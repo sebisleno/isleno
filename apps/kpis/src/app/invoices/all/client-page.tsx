@@ -13,9 +13,10 @@ export default function AllInvoicesClient() {
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [zeroValueInvoiceIds, setZeroValueInvoiceIds] = useState<number[]>([]);
   
   // Use the OCR status hook for toast notifications
-  useOcrStatus(invoices);
+  useOcrStatus(invoices, { enabled: zeroValueInvoiceIds.length > 0 });
 
   const fetchInvoices = async (page: number = 1) => {
     try {
@@ -28,8 +29,14 @@ export default function AllInvoicesClient() {
       const data = await response.json();
       setInvoices(data.invoices || []);
       setPagination(data.pagination || null);
+      if (Array.isArray(data?.metadata?.zeroValueInvoiceIds)) {
+        setZeroValueInvoiceIds(data.metadata.zeroValueInvoiceIds);
+      } else {
+        setZeroValueInvoiceIds([]);
+      }
     } catch (error) {
       console.error('Error fetching invoices:', error);
+      setZeroValueInvoiceIds([]);
     } finally {
       setLoading(false);
     }

@@ -317,6 +317,12 @@ export default function InvoiceDetailPage() {
   }
 
   const supplier = suppliers.find(s => s.id === invoice.partner_id?.[0]);
+  const firstAttachment = invoice.attachments?.[0];
+  const hasAttachments = !!firstAttachment;
+  const canPreviewPdf = hasAttachments && firstAttachment?.mimetype === 'application/pdf' && !!firstAttachment?.datas;
+  const previewSrc = canPreviewPdf && firstAttachment?.datas
+    ? `data:${firstAttachment.mimetype};base64,${firstAttachment.datas}`
+    : undefined;
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -348,7 +354,7 @@ export default function InvoiceDetailPage() {
               {t('invoiceDetails')}
             </CardTitle>
             {/* PDF Viewer Button - only show if there are attachments */}
-            {invoice.attachments && invoice.attachments.length > 0 && (
+            {hasAttachments && (
               <Sheet open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
                 <SheetTrigger asChild>
                   <Button 
@@ -362,18 +368,18 @@ export default function InvoiceDetailPage() {
                 </SheetTrigger>
                 <SheetContent className="w-full sm:max-w-2xl">
                   <SheetHeader>
-                    <SheetTitle>{invoice.attachments[0].name}</SheetTitle>
+                    <SheetTitle>{firstAttachment?.name || 'Attachment'}</SheetTitle>
                   </SheetHeader>
                   <div className="mt-4 h-full">
-                    {invoice.attachments[0].mimetype === 'application/pdf' ? (
+                    {canPreviewPdf && previewSrc ? (
                       <iframe
-                        src={`data:${invoice.attachments[0].mimetype};base64,${invoice.attachments[0].datas}`}
+                        src={previewSrc}
                         className="w-full h-full border-0"
-                        title={invoice.attachments[0].name}
+                        title={firstAttachment?.name}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground">
-                        <p>{t('previewNotAvailable')} {invoice.attachments[0].mimetype}</p>
+                        <p>{t('previewNotAvailable')} {firstAttachment?.mimetype}</p>
                       </div>
                     )}
                   </div>

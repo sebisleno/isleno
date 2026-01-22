@@ -30,7 +30,7 @@ export interface OdooSpendCategory extends OdooRecord {
 export interface OdooAttachment extends OdooRecord {
   name: string;
   mimetype: string;
-  datas: string;
+  datas?: string;
   res_model?: string;
   res_id?: number;
 }
@@ -79,7 +79,7 @@ export interface OdooInvoiceLineItem extends OdooRecord {
 export interface OdooInvoiceAttachment extends OdooRecord {
   name: string;
   mimetype: string;
-  datas: string;
+  datas?: string;
 }
 
 // User Profile data from Supabase (related to Odoo integration)

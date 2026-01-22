@@ -21,14 +21,23 @@ interface OcrRefreshStatus {
   lastError?: string;
 }
 
-export function useOcrStatus(invoices?: OdooInvoice | OdooInvoice[]) {
+interface UseOcrStatusOptions {
+  enabled?: boolean;
+  pollingInterval?: number;
+}
+
+export function useOcrStatus(
+  invoices?: OdooInvoice | OdooInvoice[],
+  options: UseOcrStatusOptions = {}
+) {
   const [status, setStatus] = useState<OcrRefreshStatus>({ isRunning: false });
   const [lastProcessedResult, setLastProcessedResult] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { enabled = true, pollingInterval = 2000 } = options;
 
   // Check if any invoices need OCR processing (null or zero amount_untaxed)
   const needsOcrProcessing = () => {
-    if (!invoices) return false;
+    if (!enabled || !invoices) return false;
     
     const invoiceArray = Array.isArray(invoices) ? invoices : [invoices];
     return invoiceArray.some(invoice => 
@@ -117,21 +126,26 @@ export function useOcrStatus(invoices?: OdooInvoice | OdooInvoice[]) {
   };
 
   useEffect(() => {
-    // Only poll if there are invoices that need OCR processing
-    if (needsOcrProcessing()) {
-      // Start polling when component mounts
-      pollStatus();
-      
-      // Poll every 2 seconds
-      intervalRef.current = setInterval(pollStatus, 2000);
+    // Only poll if explicitly enabled and invoices still need OCR processing
+    if (!needsOcrProcessing()) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
     }
-    
+
+    // Start polling when enabled
+    pollStatus();
+    intervalRef.current = setInterval(pollStatus, pollingInterval);
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [invoices]); // Re-run when invoices change
+  }, [invoices, enabled, pollingInterval]); // Re-run when invoices or enablement state change
 
   // Update lastProcessedResult when status changes
   useEffect(() => {
