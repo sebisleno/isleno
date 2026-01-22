@@ -26,22 +26,33 @@ export async function getInvoice(invoiceId: number): Promise<OdooInvoice | null>
         "partner_id",
         "invoice_date",
         "invoice_date_due",
-        "amount_untaxed", 
+        "amount_untaxed",
         "currency_id",
         "x_studio_project_manager_review_status",
         "x_studio_project_manager_1",
         "state",
         "name",
-        "message_main_attachment_id"
+        "message_main_attachment_id",
+        "invoice_line_ids"
     ];
 
     const invoices = await odooApi.searchRead(INVOICE_MODEL, domain, { fields });
-    
+
     if (invoices.length === 0) {
         return null;
     }
 
     const invoice = invoices[0];
+
+    // Fetch line items with analytic_distribution to get assigned department/project
+    if (invoice.invoice_line_ids && invoice.invoice_line_ids.length > 0) {
+        const lineItemFields = ["id", "account_id", "analytic_distribution", "price_subtotal", "name"];
+        const lineItems = await odooApi.searchRead(LINE_ITEM_MODEL, [
+            ["id", "in", invoice.invoice_line_ids],
+            ["display_type", "=", false] // Exclude section/note lines
+        ], { fields: lineItemFields });
+        invoice.line_items = lineItems;
+    }
 
     // Fetch attachments for this invoice
     const attachmentDomain = [
@@ -639,21 +650,21 @@ export async function getSuppliers(): Promise<OdooSupplier[]> {
 
 export async function getProjects(): Promise<OdooProject[]> {
     try {
-        
+
         const domain = [
             ["active", "=", true],
             ["name", "!=", false], // Ensure name is not false/null
             ["name", "!=", ""],     // Ensure name is not empty string
-            ["company_id", "=", ODOO_MAIN_COMPANY_ID], // Filter by main company
+            // Removed company_id filter to fetch ALL projects across companies
         ];
         const fields = ["id", "name", "code", "plan_id"];
         const kwargs = {
             order: "name asc", // Order by name to ensure consistent results
             limit: 1000        // Add reasonable limit to prevent excessive data
         };
-        
+
         const projects = await odooApi.searchRead(PROJECT_MODEL, domain, { fields, ...kwargs });
-        
+
         return projects;
     } catch (error) {
         console.error("❌ Odoo getProjects error:", error);

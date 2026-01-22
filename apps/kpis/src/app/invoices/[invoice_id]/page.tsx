@@ -54,37 +54,57 @@ export default function InvoiceDetailPage() {
     }
   }, [invoiceId]);
 
-  // Pre-populate department based on invoice alias
+  // Pre-populate department and project based on invoice's analytic distribution from Odoo
   useEffect(() => {
-    const prePopulateDepartment = async () => {
-      // Only run if we have invoice data, projects loaded, and haven't attempted yet
-      if (invoice?.x_studio_project_manager_1 && projects.length > 0 && !selectedDepartment) {
+    const prePopulateFromAnalyticDistribution = async () => {
+      // Only run if we have invoice data with line items, projects loaded, and haven't attempted yet
+      if (invoice && projects.length > 0 && !hasAttemptedPopulate.current) {
         hasAttemptedPopulate.current = true;
-        try {
-          // Fetch user by invoice alias
-          const response = await fetch(`/api/users/by-alias?alias=${encodeURIComponent(invoice.x_studio_project_manager_1)}`);
-          if (response.ok) {
-            const userData = await response.json();
-            if (userData.user?.department_id) {
-              // Find the department project
-              const userDeptProject = projects.find(p => 
-                p.id === userData.user.department_id &&
-                (DEPARTMENT_IDENTIFIERS.includes(p.plan_id[1]))
-              );
-              if (userDeptProject) {
-                setSelectedDepartment(userDeptProject);
-                return;
-              }
-            }
+
+        // Get analytic distribution from invoice line items
+        const lineItems = (invoice as any).line_items || [];
+        const analyticIds: number[] = [];
+
+        // Collect all analytic account IDs from line items
+        for (const lineItem of lineItems) {
+          if (lineItem.analytic_distribution) {
+            const ids = Object.keys(lineItem.analytic_distribution).map(id => parseInt(id));
+            analyticIds.push(...ids);
           }
-        } catch (error) {
-          console.error('Failed to fetch user by alias:', error);
         }
-        // If any step fails, leave selectedDepartment as null (user must select manually)
+
+        // Remove duplicates
+        const uniqueAnalyticIds = [...new Set(analyticIds)];
+
+        if (uniqueAnalyticIds.length > 0) {
+          // Find department (where plan_id[1] is "Department" or "Departmento")
+          const departmentProject = projects.find(p =>
+            uniqueAnalyticIds.includes(p.id) &&
+            p.plan_id &&
+            DEPARTMENT_IDENTIFIERS.includes(p.plan_id[1])
+          );
+
+          if (departmentProject) {
+            setSelectedDepartment(departmentProject);
+            console.log('Auto-selected department from Odoo:', departmentProject.name);
+          }
+
+          // Find project (where plan_id[1] is "Project" or "Proyecto")
+          const constructionProject = projects.find(p =>
+            uniqueAnalyticIds.includes(p.id) &&
+            p.plan_id &&
+            PROJECT_IDENTIFIERS.includes(p.plan_id[1])
+          );
+
+          if (constructionProject) {
+            setSelectedProject(constructionProject);
+            console.log('Auto-selected project from Odoo:', constructionProject.name);
+          }
+        }
       }
     };
 
-    prePopulateDepartment();
+    prePopulateFromAnalyticDistribution();
   }, [invoice, projects, loading]);
 
   const fetchInvoice = async () => {

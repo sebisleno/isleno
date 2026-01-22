@@ -60,6 +60,7 @@ export interface OdooInvoice extends OdooRecord {
   ref?: string;
   department_name?: string; // Added by our API
   attachments?: OdooInvoiceAttachment[];
+  line_items?: OdooInvoiceLineItem[]; // Line items with analytic distribution for auto-selecting department/project
 }
 
 // account.move.line (Invoice Line Items)
