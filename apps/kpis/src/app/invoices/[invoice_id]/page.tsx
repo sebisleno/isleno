@@ -27,7 +27,13 @@ export default function InvoiceDetailPage() {
   const { addApprovedInvoice, isInvoiceApproved: isInvoiceApprovedInSession } = useBudget();
   const DEPARTMENT_IDENTIFIERS = ["Department","Departmento"];
   const PROJECT_IDENTIFIERS = ["Project","Proyecto"];
-  const CONSTRUCTION_DEPT_ID = 17;
+  const CONSTRUCTION_DEPT_NAMES = ["Construction", "Construcción", "Construccion"];
+
+  // Helper to check if a department is Construction by name
+  const isConstructionDepartment = (dept: OdooProject | null) => {
+    if (!dept) return false;
+    return CONSTRUCTION_DEPT_NAMES.some(name => dept.name.toLowerCase().includes(name.toLowerCase()));
+  };
   
   const [invoice, setInvoice] = useState<OdooInvoice | null>(null);
   const [suppliers, setSuppliers] = useState<OdooSupplier[]>([]);
@@ -81,12 +87,29 @@ export default function InvoiceDetailPage() {
         console.log('🔍 DEBUG: Unique analytic IDs found:', uniqueAnalyticIds);
 
         if (uniqueAnalyticIds.length > 0) {
+          // Find project first (where plan_id[1] is "Project" or "Proyecto")
+          const constructionProject = projects.find(p =>
+            uniqueAnalyticIds.includes(p.id) &&
+            p.plan_id &&
+            PROJECT_IDENTIFIERS.includes(p.plan_id[1])
+          );
+
           // Find department (where plan_id[1] is "Department" or "Departmento")
-          const departmentProject = projects.find(p =>
+          let departmentProject = projects.find(p =>
             uniqueAnalyticIds.includes(p.id) &&
             p.plan_id &&
             DEPARTMENT_IDENTIFIERS.includes(p.plan_id[1])
           );
+
+          // If a construction project is found but no department, auto-select Construction department by name
+          if (constructionProject && !departmentProject) {
+            departmentProject = projects.find(p =>
+              p.plan_id &&
+              DEPARTMENT_IDENTIFIERS.includes(p.plan_id[1]) &&
+              CONSTRUCTION_DEPT_NAMES.some(name => p.name.toLowerCase().includes(name.toLowerCase()))
+            );
+            console.log('🏗️ Auto-selecting Construction department for project:', constructionProject.name);
+          }
 
           if (departmentProject) {
             setSelectedDepartment(departmentProject);
@@ -95,16 +118,9 @@ export default function InvoiceDetailPage() {
             console.log('⚠️ DEBUG: No matching department found for analytic IDs:', uniqueAnalyticIds);
           }
 
-          // Find project (where plan_id[1] is "Project" or "Proyecto")
-          const constructionProject = projects.find(p =>
-            uniqueAnalyticIds.includes(p.id) &&
-            p.plan_id &&
-            PROJECT_IDENTIFIERS.includes(p.plan_id[1])
-          );
-
           if (constructionProject) {
             setSelectedProject(constructionProject);
-            console.log('Auto-selected project from Odoo:', constructionProject.name);
+            console.log('✅ Auto-selected project from Odoo:', constructionProject.name);
           }
         }
       }
@@ -500,7 +516,7 @@ export default function InvoiceDetailPage() {
             </div>
             
             {/* Project Field - Only visible when "Construction" department is selected */}
-            {selectedDepartment && selectedDepartment.id === CONSTRUCTION_DEPT_ID && (
+            {selectedDepartment && isConstructionDepartment(selectedDepartment) && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('project')}</label>
                 <select 
@@ -550,7 +566,7 @@ export default function InvoiceDetailPage() {
         <BudgetImpactCard
           invoiceAmount={invoice.amount_untaxed}
           className="border-l-4 border-l-blue-500"
-          invoiceType={selectedDepartment.id === CONSTRUCTION_DEPT_ID ? 'construction' : 'department'}
+          invoiceType={isConstructionDepartment(selectedDepartment) ? 'construction' : 'department'}
           // Construction-specific props
           projectId={selectedProject?.id}
           projectName={selectedProject?.name}
@@ -578,7 +594,7 @@ export default function InvoiceDetailPage() {
             hasExternalBasicPermission && (
               !selectedDepartment || 
               userLoading || 
-              (selectedDepartment.id === CONSTRUCTION_DEPT_ID && !selectedProject)
+              (isConstructionDepartment(selectedDepartment) && !selectedProject)
             ) ||
             isInvoiceApproved(invoice) ||
             isInvoiceApprovedInSession(parseInt(invoiceId))
