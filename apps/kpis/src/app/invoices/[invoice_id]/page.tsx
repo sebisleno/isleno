@@ -57,12 +57,15 @@ export default function InvoiceDetailPage() {
   // Pre-populate department and project based on invoice's analytic distribution from Odoo
   useEffect(() => {
     const prePopulateFromAnalyticDistribution = async () => {
+      console.log('🔄 DEBUG: prePopulate check - invoice:', !!invoice, 'projects:', projects.length, 'hasAttempted:', hasAttemptedPopulate.current);
       // Only run if we have invoice data with line items, projects loaded, and haven't attempted yet
       if (invoice && projects.length > 0 && !hasAttemptedPopulate.current) {
         hasAttemptedPopulate.current = true;
 
         // Get analytic distribution from invoice line items
         const lineItems = (invoice as any).line_items || [];
+        console.log('🔍 DEBUG: Invoice line_items:', lineItems);
+        console.log('🔍 DEBUG: Invoice object keys:', Object.keys(invoice));
         const analyticIds: number[] = [];
 
         // Collect all analytic account IDs from line items
@@ -75,6 +78,7 @@ export default function InvoiceDetailPage() {
 
         // Remove duplicates
         const uniqueAnalyticIds = [...new Set(analyticIds)];
+        console.log('🔍 DEBUG: Unique analytic IDs found:', uniqueAnalyticIds);
 
         if (uniqueAnalyticIds.length > 0) {
           // Find department (where plan_id[1] is "Department" or "Departmento")
@@ -86,7 +90,9 @@ export default function InvoiceDetailPage() {
 
           if (departmentProject) {
             setSelectedDepartment(departmentProject);
-            console.log('Auto-selected department from Odoo:', departmentProject.name);
+            console.log('✅ Auto-selected department from Odoo:', departmentProject.name);
+          } else {
+            console.log('⚠️ DEBUG: No matching department found for analytic IDs:', uniqueAnalyticIds);
           }
 
           // Find project (where plan_id[1] is "Project" or "Proyecto")
