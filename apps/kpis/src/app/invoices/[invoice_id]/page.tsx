@@ -379,7 +379,8 @@ export default function InvoiceDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">{t('invoice')} #{invoice.id}</h1>
+          <h1 className="text-2xl font-bold">{t('invoice')} #{invoice.name || invoice.id}</h1>
+          <p className="text-sm text-muted-foreground">Odoo ID: {invoice.id}</p>
         </div>
         {(() => {
           const statusInfo = getCurrentStatus(invoice);
