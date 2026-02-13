@@ -46,10 +46,10 @@ export async function getInvoice(invoiceId: number): Promise<OdooInvoice | null>
 
     // Fetch line items with analytic_distribution to get assigned department/project
     if (invoice.invoice_line_ids && invoice.invoice_line_ids.length > 0) {
-        const lineItemFields = ["id", "account_id", "analytic_distribution", "price_subtotal", "name"];
+        const lineItemFields = ["id", "account_id", "analytic_distribution", "price_subtotal", "name", "display_type"];
         const lineItems = await odooApi.searchRead(LINE_ITEM_MODEL, [
             ["id", "in", invoice.invoice_line_ids],
-            ["display_type", "=", false] // Exclude section/note lines
+            ["display_type", "not in", ["line_section", "line_note"]] // Exclude section/note lines, keep product lines
         ], { fields: lineItemFields });
         invoice.line_items = lineItems;
     }
